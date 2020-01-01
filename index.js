@@ -29,8 +29,11 @@ registerPatcher({
         // you want to use a unique patch file for your patcher instead of the
         // default zPatch.esp plugin file.  (using zPatch.esp is recommended)
         defaultSettings: {
-            exampleSetting: 'hello world',
-            patchFileName: 'examplePatch.esp'
+            arrowGravity: 0.20,
+            arrowSpeed: 5400,
+            boltGravity: 0.20,
+            boltSpeed: 5400,
+            patchFileName: 'abtPatch.esp'
         }
     },
     // optional array of required filenames.  can omit if empty.
