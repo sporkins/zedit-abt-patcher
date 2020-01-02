@@ -38,40 +38,27 @@ registerPatcher({
             load: {
                 signature: 'AMMO',
                 filter: function(record) {
+                    helpers.logMessage(xelib.FullName(record));
                     return xelib.GetValue(record, 'DNAM');
                 }
             },
             patch: function(record) {
-                // change values on the record as required
-                // you can also remove the record here, but it is discouraged.
-                // (try to use filters instead.)
-                helpers.logMessage(`Patching ${xelib.LongName(record)}`);
-                xelib.SetValue(record, 'DNAM', '30');
+                // helpers.logMessage(`Patching ${xelib.LongName(record)}`);
+                // xelib.SetValue(record, 'DNAM', '30');
             }
-        }, {
-            // loads all REFRs that place Weapons
-            records: filesToPatch => {
-                let records = filesToPatch.map(f => {
-                    return xelib.GetREFRs(f, 'WEAP');
-                });
-                return Array.prototype.concat.apply([], records);
-            },
-            // patches REFRs that place weapons to be initially disabled
-            patch: function(record) {
-                xelib.SetFlag(record, 'Record Header\\Record Flags', 'Initially Disabled', true);
-            }
-        }],
+        },
         finalize: function() {
             // Optional function, omit if empty. Perform any cleanup here.
             // note that the framework automatically removes unused masters as
             // well as ITPO and ITM records, so you don't need to do that
-            helpers.logMessage(`Found ${locals.weapons.length} cached weapons records.`);
+            // helpers.logMessage(`Found ${locals.weapons.length} cached weapons records.`);
             // this creates a new record at the same form ID each time the patch
             // is rebuilt so it doesn't get lost when the user rebuilds a patch
             // plugin and loads a save
-            let weapon  = xelib.AddElement(patchFile, 'WEAP\\WEAP');
-            helpers.cacheRecord(weapon, 'MEPz_BlankWeapon');
-            xelib.AddElementValue(weapon, 'FULL', 'Blank Weapon');
+
+            // let weapon  = xelib.AddElement(patchFile, 'WEAP\\WEAP');
+            // helpers.cacheRecord(weapon, 'MEPz_BlankWeapon');
+            // xelib.AddElementValue(weapon, 'FULL', 'Blank Weapon');
         }
     })
 });
