@@ -1,3 +1,74 @@
+let getArrowProjectiles = (helpers) => {
+    let projectiles = helpers.loadRecords('AMMO')
+        .filter(a => {
+            let isNonbolt = xelib.GetFlag(a, 'DATA\\Flags', 'Non-Bolt') == true;
+            let isRiekling = /Riekling/i.test(xelib.LongName(a));
+            helpers.logMessage(`arrow PROJ: ${xelib.LongName(a)}, isNonbolt=${isNonbolt}, isRiekling=${isRiekling}`);
+            return !isRiekling && isNonbolt;
+        })
+        .map(a =>  xelib.GetWinningOverride(xelib.GetLinksTo(a, 'DATA\\Projectile')))
+    return uniqueify(projectiles, xelib.GetFormID);
+}
+
+let getBoltProjectiles = (helpers) => {
+    let projectiles = helpers.loadRecords('AMMO')
+        .filter(a => {
+            let isBolt = xelib.GetFlag(a, 'DATA\\Flags', 'Non-Bolt') == false;
+            let isRiekling = /Riekling/i.test(xelib.LongName(a));
+            helpers.logMessage(`bolt PROJ: ${xelib.LongName(a)}, isBolt=${isBolt}, isRiekling=${isRiekling}`);
+            return !isRiekling && isBolt;
+        })
+        .map(a => xelib.GetWinningOverride(xelib.GetLinksTo(a, 'DATA\\Projectile')))
+    return uniqueify(projectiles, xelib.GetFormID);
+}
+
+let {EditorID, GetRefEditorID, GetValue, GetFlag, HasElement, GetElement, GetElements, GetLinksTo, GetWinningOverride} = xelib;
+let getSignature = (rec) => xelib.ExtractSignature(xelib.LongName(rec));
+let getTemplateFlags = (rec) => ['Use Traits', 'Use Stats','Use Factions','Use Spell List','Use AI Data','Use AI Packages','Use Model/Animation?','Use Base Data','Use Inventory','Use Script','Use Def Pack List','Use Attack Data','Use Keywords'].filter(flag => GetFlag(rec, 'ACBS\\Template Flags', flag));
+let hasAmmoItemsWithCountExceeding = (npc, helpers, maxCount) => {
+    return getAmmoItems(npc, helpers)
+        .map(ammoItem => {
+            let entryData = GetElement(ammoItem, 'CNTO');
+            let count = parseInt(GetValue(entryData, 'Count'), 10);
+            return count > maxCount;
+        })
+        .includes(true);
+};
+let getAmmoItems = (npc, helpers) => {
+	let entries = HasElement(npc, 'Items')? GetElements(npc, 'Items') : [];
+    return entries.filter(ientry => {
+        let entryData = GetElement(ientry, 'CNTO');
+        return getSignature(GetLinksTo(entryData, 'Item')) === 'AMMO';
+    });
+};
+
+let getNpcWithTooMuchAmmo = (helpers, settings) => {
+    return helpers.loadRecords("NPC_")
+        .filter(npc => {
+            let hasTemplate = HasElement(npc, 'TPLT'), templateFlags = hasTemplate? getTemplateFlags(npc):[];
+            if (!hasTemplate || !templateFlags.includes('Use Inventory')) {
+                if(hasAmmoItemsWithCountExceeding(npc, helpers, settings.ammoItemCount)) {
+                    helpers.logMessage(`NPC  ${xelib.LongName(npc)} has AMMO item exceeding max count`);
+                    return true;
+                }
+            } else {
+                helpers.logMessage(`NPC  ${xelib.LongName(npc)} has TPLT element and Use Inventory flag`);
+                return false;
+            }
+        })	
+};
+
+function uniqueify(array, ux) {
+    let map = new Map();
+    for (p of array) {
+        map.set(ux(p), p);
+    }
+    var filteredData = [];
+    map.forEach( (value, key, map) => {
+        filteredData.push(value);
+    });
+    return filteredData;
+}
 
 registerPatcher({
     info: info,
@@ -6,59 +77,67 @@ registerPatcher({
         label: 'ABT Patcher',
         //hide: true,
         templateUrl: `${patcherUrl}/partials/settings.html`,
+        controller: function($scope) {
+            let patcherSettings = $scope.settings.abtPatcher;
+        },
         defaultSettings: {
             arrowGravity: 0.20,
             arrowSpeed: 5400,
             boltGravity: 0.20,
-            boltSpeed: 5400,
+            boltSpeed: 8100,
+            ammoItemCount: 20,
             patchFileName: 'abtPatch.esp'
         }
     },
     requiredFiles: [],
     getFilesToPatch: function(filenames) {
-       return filenames.filter(function(value, index, arr) {
-            return (value != `abtPatch.esp`);
-        });
+        return filenames.subtract(['abtPatch.esp']);
     },
     execute: (patchFile, helpers, settings, locals) => ({
         initialize: function() {
-            // Optional function, omit if empty.
-            // Perform anything that needs to be done once at the beginning of the
-            // patcher's execution here.  This can be used to cache records which don't
-            // need to be patched, but need to be referred to later on.  Store values
-            // on the locals variable to refer to them later in the patching process.
-            helpers.logMessage(settings);
-            // this line shows you how to load records using the loadRecords helper
-            // function and store them on locals for the purpose of caching
-            // locals.weapons = helpers.loadRecords('WEAP');
+            locals.boltProjectiles = getBoltProjectiles(helpers);
+            locals.arrowProjectiles = getArrowProjectiles(helpers);
+            locals.npcsWithTooMuchAmmo = getNpcWithTooMuchAmmo(helpers, settings);
         },
-        // required: array of process blocks. each process block should have both
-        // a load and a patch function.
-        process: [{
-            load: {
-                signature: 'AMMO',
-                filter: function(record) {
-                    helpers.logMessage(xelib.FullName(record));
-                    return xelib.GetValue(record, 'DNAM');
+        process: [
+            {
+                records: () => {
+                   return locals.boltProjectiles;
+                },
+                patch: function(record) {
+                    helpers.logMessage(`Patching bolt PROJ: ${xelib.LongName(record)}, gravity=${settings.boltGravity}, speed=${settings.boltSpeed}`);
+                    xelib.SetFloatValue(record, 'DATA\\Gravity', settings.boltGravity);
+                    xelib.SetFloatValue(record, 'DATA\\Speed', settings.boltSpeed);
                 }
             },
-            patch: function(record) {
-                // helpers.logMessage(`Patching ${xelib.LongName(record)}`);
-                // xelib.SetValue(record, 'DNAM', '30');
+            {
+                records: () => {
+                    return locals.arrowProjectiles;
+                },
+                patch: function(record) {
+                    helpers.logMessage(`Patching arrow PROJ: ${xelib.LongName(record)}, gravity=${settings.arrowGravity}, speed=${settings.arrowSpeed}`);
+                    xelib.SetFloatValue(record, 'DATA\\Gravity', settings.arrowGravity);
+                    xelib.SetFloatValue(record, 'DATA\\Speed', settings.arrowSpeed);
+                }
+            },
+            {
+                records: () => {
+                    return locals.npcsWithTooMuchAmmo
+                },
+                patch: function(npc) {
+                    getAmmoItems(npc, helpers)
+                        .map(ammoItem => {
+                            let entryData = GetElement(ammoItem, 'CNTO');
+                            let count = parseInt(GetValue(entryData, 'Count'), 10);
+                            let refId = GetRefEditorID(entryData, 'Item');
+                            if(count > settings.ammoItemCount) {
+                                helpers.logMessage(`Patching AMMO item for NPC: ${xelib.LongName(npc)}`);
+                                xelib.SetIntValue(entryData, 'Count', settings.ammoItemCount);
+                            }
+                        });
+                }
             }
-        },
-        finalize: function() {
-            // Optional function, omit if empty. Perform any cleanup here.
-            // note that the framework automatically removes unused masters as
-            // well as ITPO and ITM records, so you don't need to do that
-            // helpers.logMessage(`Found ${locals.weapons.length} cached weapons records.`);
-            // this creates a new record at the same form ID each time the patch
-            // is rebuilt so it doesn't get lost when the user rebuilds a patch
-            // plugin and loads a save
-
-            // let weapon  = xelib.AddElement(patchFile, 'WEAP\\WEAP');
-            // helpers.cacheRecord(weapon, 'MEPz_BlankWeapon');
-            // xelib.AddElementValue(weapon, 'FULL', 'Blank Weapon');
-        }
+        ],
+        finalize: function() {}
     })
 });
